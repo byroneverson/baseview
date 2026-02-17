@@ -24,11 +24,13 @@ use std::collections::VecDeque;
 use std::ffi::{c_void, OsStr};
 use std::os::windows::ffi::OsStrExt;
 use std::ptr::null_mut;
+use std::num::NonZero;
 use std::rc::Rc;
 
 use raw_window_handle::{
-    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle, Win32WindowHandle,
-    WindowsDisplayHandle,
+    Win32WindowHandle, WindowsDisplayHandle,
+    HasDisplayHandle, HasWindowHandle,
+    RawWindowHandle, RawDisplayHandle, HandleError,
 };
 
 const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
@@ -86,16 +88,16 @@ impl WindowHandle {
     }
 }
 
-unsafe impl HasRawWindowHandle for WindowHandle {
-    fn raw_window_handle(&self) -> RawWindowHandle {
+impl HasWindowHandle for WindowHandle {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, HandleError> {
         if let Some(hwnd) = self.hwnd {
-            let mut handle = Win32WindowHandle::empty();
-            handle.hwnd = hwnd as *mut c_void;
-
-            RawWindowHandle::Win32(handle)
-        } else {
-            RawWindowHandle::Win32(Win32WindowHandle::empty())
+            let handle = Win32WindowHandle::new(
+                NonZero::<isize>::new(hwnd as isize).ok_or(HandleError::Unavailable)?
+            );
+            let raw = RawWindowHandle::Win32(handle);
+            return unsafe { Ok(raw_window_handle::WindowHandle::borrow_raw(raw)) };
         }
+        Err(HandleError::Unavailable)
     }
 }
 
@@ -591,14 +593,18 @@ pub struct Window<'a> {
 impl Window<'_> {
     pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
-        P: HasRawWindowHandle,
+        P: HasWindowHandle,
         H: WindowHandler + 'static,
         B: FnOnce(&mut crate::Window) -> H,
         B: Send + 'static,
     {
-        let parent = match parent.raw_window_handle() {
-            RawWindowHandle::Win32(h) => h.hwnd as HWND,
-            h => panic!("unsupported parent handle {:?}", h),
+        let parent = {
+            let window_handle = parent.window_handle().expect("Failed to get parent handle");
+            if let RawWindowHandle::Win32(h) = window_handle.as_raw() {
+                h.hwnd.get() as HWND
+            } else {
+                panic!("unsupported parent handle {:?}", window_handle);
+            }
         };
 
         let (window_handle, _) = Self::open(true, parent, options, build);
@@ -696,11 +702,11 @@ impl Window<'_> {
 
             #[cfg(feature = "opengl")]
             let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
-                let mut handle = Win32WindowHandle::empty();
-                handle.hwnd = hwnd as *mut c_void;
+                let handle = raw_window_handle::Win32WindowHandle::new(
+                    std::num::NonZeroIsize::new(hwnd as isize).expect("HWND was null")
+                );
                 let handle = RawWindowHandle::Win32(handle);
-
-                GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
+                unsafe { GlContext::create(&handle, gl_config).expect("Could not create OpenGL context") }
             });
 
             let (parent_handle, window_handle) = ParentHandle::new(hwnd);
@@ -836,18 +842,20 @@ impl Window<'_> {
     }
 }
 
-unsafe impl HasRawWindowHandle for Window<'_> {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        let mut handle = Win32WindowHandle::empty();
-        handle.hwnd = self.state.hwnd as *mut c_void;
-
-        RawWindowHandle::Win32(handle)
+impl HasWindowHandle for Window<'_> {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, HandleError> {
+        let handle = Win32WindowHandle::new(
+            NonZero::<isize>::new(self.state.hwnd as isize).ok_or(HandleError::Unavailable)?
+        );
+        let raw = RawWindowHandle::Win32(handle);
+        unsafe { Ok(raw_window_handle::WindowHandle::borrow_raw(raw)) }
     }
 }
 
-unsafe impl HasRawDisplayHandle for Window<'_> {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        RawDisplayHandle::Windows(WindowsDisplayHandle::empty())
+impl HasDisplayHandle for Window<'_> {
+    fn display_handle(&self) -> Result<raw_window_handle::DisplayHandle<'_>, HandleError> {
+        let raw = RawDisplayHandle::Windows(WindowsDisplayHandle::new());
+        unsafe { Ok(raw_window_handle::DisplayHandle::borrow_raw(raw)) }
     }
 }
 
