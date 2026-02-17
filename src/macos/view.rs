@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use cocoa::appkit::{NSEvent, NSFilenamesPboardType, NSView, NSWindow};
+use cocoa::appkit::{NSEvent, NSFilenamesPboardType, NSView, NSWindow, NSViewWidthSizable, NSViewHeightSizable};
 use cocoa::base::{id, nil, BOOL, NO, YES};
 use cocoa::foundation::{NSArray, NSPoint, NSRect, NSSize, NSUInteger};
 
@@ -120,6 +120,9 @@ pub(super) unsafe fn create_view(window_options: &WindowOpenOptions) -> id {
     let size = window_options.size;
 
     view.initWithFrame_(NSRect::new(NSPoint::new(0., 0.), NSSize::new(size.width, size.height)));
+
+    let mask = NSViewWidthSizable | NSViewHeightSizable;
+    let _: id = msg_send![view, setAutoresizingMask: mask];
 
     register_notification(view, NSWindowDidBecomeKeyNotification, nil);
     register_notification(view, NSWindowDidResignKeyNotification, nil);
