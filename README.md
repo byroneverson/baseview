@@ -1,3 +1,22 @@
+# ⚠️ Breaking Change: raw-window-handle 0.6 Migration
+This version of baseview has been migrated from raw-window-handle 0.5 to 0.6. This is a significant breaking change that affects how window handles are requested and passed.
+
+## What has changed?
+New Traits: The deprecated HasRawWindowHandle and HasRawDisplayHandle have been replaced by the modern HasWindowHandle and HasDisplayHandle.
+
+Type Safety: Handles are no longer returned as raw enums. They now return a Result<WindowHandle, HandleError>, providing better lifecycle safety and error handling.
+
+Platform Specifics:
+
+Windows: HWND is now handled as a NonZero<isize>.
+
+macOS: NSView and NSWindow now use NonNull<c_void>.
+
+Linux (X11): Display pointers now require NonNull wrappers and Window IDs are u64.
+
+## Why this matters
+This update ensures that baseview is fully compatible with the latest ecosystem releases of wgpu, vizia, glutin, and Slint. If you are upgrading from an older version of baseview, you will need to update your window creation and rendering setup to handle the new Result-based handle API.
+
 # baseview
 
 A low-level windowing system geared towards making audio plugin UIs.
